@@ -126,6 +126,18 @@
     return m[1] === 'DAY' ? 0 : Number(m[1]);
   }
 
+  // D-N 배지가 <a> 태그 안이 아니라 카드 내 형제 요소에 있을 수 있어서,
+  // 링크 자신부터 시작해 몇 단계 위 조상까지 넓혀가며 D-N을 찾는다.
+  // 가장 먼저 D-N이 나오는 조상에서 멈추기 때문에 다른 카드 텍스트와 섞이지 않는다.
+  function findCardText(link) {
+    let node = link;
+    for (let i = 0; i < 6 && node; i++) {
+      if (/D-(\d+|DAY)\b/.test(node.textContent)) return node.textContent;
+      node = node.parentElement;
+    }
+    return link.textContent;
+  }
+
   function collectListItems() {
     const links = document.querySelectorAll('a[href*="/giftbox/inbox/detail/"]');
     const items = [];
@@ -136,14 +148,15 @@
       if (!m) return;
       const id = m[1];
       if (seen.has(id)) return;
-      const remaining = parseDaysRemaining(a.textContent);
+      const cardText = findCardText(a);
+      const remaining = parseDaysRemaining(cardText);
       if (remaining === null) return;
       seen.add(id);
       items.push({
         id,
         url: new URL(href, location.origin).href,
         remaining,
-        name: a.textContent.replace(/\s+/g, ' ').trim().slice(0, 40),
+        name: cardText.replace(/\s+/g, ' ').trim().slice(0, 40),
       });
     });
     return items;
