@@ -23,6 +23,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type === 'NOTIFY_UNEXTENDABLE' && msg.count > 0) {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icon128.png',
+      title: '연장할 수 없는 기프티콘이 있어요',
+      message: `${msg.count}개는 "기간 연장" 버튼이 없어 건너뛰었습니다. 팝업에서 목록을 확인하세요.`,
+      priority: 1,
+    });
+  }
+});
+
 function checkAndNotify() {
   chrome.storage.local.get({ lastRunAt: null, reminderNotifiedFor: null }, ({ lastRunAt, reminderNotifiedFor }) => {
     if (!lastRunAt) return;

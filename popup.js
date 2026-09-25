@@ -1,4 +1,4 @@
-const DEFAULT_SETTINGS = { autoRun: true, thresholdDays: 30 };
+const DEFAULT_SETTINGS = { autoRun: false, thresholdDays: 30 };
 const UPDATE_REMINDER_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STATUS_LABEL = {
@@ -27,23 +27,33 @@ function renderLastRun(lastRunAt) {
 }
 
 function render() {
-  chrome.storage.local.get({ ...DEFAULT_SETTINGS, log: [], lastRunAt: null }, ({ autoRun, thresholdDays, log, lastRunAt }) => {
-    document.getElementById('autoRun').checked = autoRun;
-    document.getElementById('threshold').value = thresholdDays;
-    document.getElementById('thresholdLabel').textContent = thresholdDays;
-    renderLastRun(lastRunAt);
-    const logEl = document.getElementById('log');
-    logEl.innerHTML = log.length
-      ? log
-          .map(
-            (e) =>
-              `<div class="entry ${e.status}">${new Date(e.time).toLocaleString('ko-KR')} · ${e.name}${
-                e.remaining != null ? ` (D-${e.remaining})` : ''
-              } · ${STATUS_LABEL[e.status] || e.status}</div>`
-          )
-          .join('')
-      : '<div>기록 없음</div>';
-  });
+  chrome.storage.local.get(
+    { ...DEFAULT_SETTINGS, log: [], lastRunAt: null, unextendable: [] },
+    ({ autoRun, thresholdDays, log, lastRunAt, unextendable }) => {
+      document.getElementById('autoRun').checked = autoRun;
+      document.getElementById('threshold').value = thresholdDays;
+      document.getElementById('thresholdLabel').textContent = thresholdDays;
+      renderLastRun(lastRunAt);
+      const logEl = document.getElementById('log');
+      logEl.innerHTML = log.length
+        ? log
+            .map(
+              (e) =>
+                `<div class="entry ${e.status}">${new Date(e.time).toLocaleString('ko-KR')} · ${e.name}${
+                  e.remaining != null ? ` (D-${e.remaining})` : ''
+                } · ${STATUS_LABEL[e.status] || e.status}</div>`
+            )
+            .join('')
+        : '<div>기록 없음</div>';
+
+      const unextendableEl = document.getElementById('unextendableList');
+      unextendableEl.innerHTML = unextendable.length
+        ? unextendable
+            .map((u) => `<div class="entry no_button">${u.name}</div>`)
+            .join('')
+        : '<div>없음</div>';
+    }
+  );
 }
 
 document.getElementById('autoRun').addEventListener('change', (e) => {

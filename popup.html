@@ -45,13 +45,19 @@
         background: #fff3cd;
         color: #8a6100;
       }
-      #log {
+      #log,
+      #unextendableList {
         max-height: 200px;
         overflow-y: auto;
         font-size: 12px;
         margin-top: 8px;
         border-top: 1px solid #ddd;
         padding-top: 8px;
+      }
+      h2 {
+        font-size: 12px;
+        margin: 10px 0 4px;
+        color: #555;
       }
       .entry {
         margin-bottom: 6px;
@@ -75,6 +81,9 @@
     <button id="runNow">지금 검사 및 연장</button>
     <button id="resetProcessed">처리 기록 초기화</button>
     <div id="status"></div>
+    <h2>연장 안 되는 항목 (버튼 없음)</h2>
+    <div id="unextendableList"></div>
+    <h2>처리 로그</h2>
     <div id="log"></div>
     <script src="popup.js"></script>
   </body>

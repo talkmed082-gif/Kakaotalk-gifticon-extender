@@ -4,7 +4,7 @@
 // 그래서 목록에서 대상(D-30 이내)을 골라 큐에 담아두고, 상세 화면으로 하나씩 이동하며 처리한다.
 // 카카오 화면은 리액트라 클래스명이 자주 바뀌므로, 클래스명이 아니라 화면에 보이는 텍스트를 기준으로 동작한다.
 (function () {
-  const DEFAULT_SETTINGS = { autoRun: true, thresholdDays: 30 };
+  const DEFAULT_SETTINGS = { autoRun: false, thresholdDays: 30 };
   const INBOX_PATH = '/giftbox/inbox';
   const INBOX_URL = 'https://gift.kakao.com/giftbox/inbox?couponStatus=OPEN';
   const AUTO_REDIRECT_FROM_PATHS = ['/home', '/'];
@@ -36,6 +36,16 @@
     chrome.storage.local.get({ processed: {} }, ({ processed }) => {
       processed[id] = Date.now();
       chrome.storage.local.set({ processed });
+    });
+  }
+
+  // 연장 버튼이 없어서 건너뛴 항목을 팝업에서 계속 볼 수 있게 별도로 쌓아둔다.
+  function addUnextendable(item) {
+    return new Promise((resolve) => {
+      chrome.storage.local.get({ unextendable: [] }, ({ unextendable }) => {
+        const next = [{ ...item, time: Date.now() }, ...unextendable.filter((u) => u.id !== item.id)].slice(0, 50);
+        chrome.storage.local.set({ unextendable: next }, resolve);
+      });
     });
   }
 
@@ -134,6 +144,7 @@
         return { totalCards: all.length, eligible: 0 };
       }
       await setQueue(items);
+      chrome.storage.local.set({ runNoButtonIds: [] });
       location.href = items[0].url;
       return { totalCards: all.length, eligible: items.length, navigating: true };
     } finally {
@@ -154,9 +165,26 @@
       const status = await attemptExtend();
       markProcessed(id);
       log({ name: current.name, remaining: current.remaining, status });
+      if (status === 'no_button') {
+        await addUnextendable({ id, name: current.name });
+        await new Promise((resolve) => {
+          chrome.storage.local.get({ runNoButtonIds: [] }, ({ runNoButtonIds }) => {
+            chrome.storage.local.set({ runNoButtonIds: [...runNoButtonIds, id] }, resolve);
+          });
+        });
+      }
 
       const rest = queue.filter((i) => i.id !== id);
       await setQueue(rest);
+      if (rest.length === 0) {
+        const { runNoButtonIds } = await new Promise((resolve) =>
+          chrome.storage.local.get({ runNoButtonIds: [] }, resolve)
+        );
+        if (runNoButtonIds.length > 0) {
+          chrome.runtime.sendMessage({ type: 'NOTIFY_UNEXTENDABLE', count: runNoButtonIds.length });
+        }
+        chrome.storage.local.set({ runNoButtonIds: [] });
+      }
       await sleep(NAV_DELAY_MS);
       location.href = rest.length > 0 ? rest[0].url : INBOX_URL;
     } finally {
@@ -172,6 +200,9 @@
       const status = await attemptExtend();
       markProcessed(id);
       log({ name: id, remaining: null, status });
+      if (status === 'no_button') {
+        await addUnextendable({ id, name: id });
+      }
       return { status };
     } finally {
       isProcessing = false;
