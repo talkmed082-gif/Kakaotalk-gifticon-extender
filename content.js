@@ -10,11 +10,9 @@
   const AUTO_REDIRECT_FROM_PATHS = ['/home', '/'];
   const DETAIL_PATH_RE = /^\/giftbox\/inbox\/detail\/(\d+)/;
   const EXTEND_BUTTON_TEXT = /(유효)?기간\s*연장/;
-  const CONFIRM_TEXT = /(연장하기|연장\s*신청|신청하기|확인)/;
-  const CANCEL_TEXT = /(취소|닫기|아니요)/;
   const SCAN_DEBOUNCE_MS = 1500;
   const NAV_DELAY_MS = 1200;
-  const MODAL_WAIT_MS = 4000;
+  const EXTEND_REQUEST_WAIT_MS = 1500;
 
   let scanTimer = null;
   let isProcessing = false;
@@ -62,47 +60,6 @@
     return el.children.length === 0;
   }
 
-  function findMatchInNewNodes(mutationsList, matcher) {
-    for (const mutation of mutationsList) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        const candidates = isLeaf(node) ? [node] : [...node.querySelectorAll('*')].filter(isLeaf);
-        for (const el of candidates) {
-          const text = el.textContent.trim().replace(/\s+/g, ' ');
-          if (matcher(text) && isVisible(el)) return el;
-        }
-      }
-    }
-    return null;
-  }
-
-  function waitForConfirmClick() {
-    return new Promise((resolve) => {
-      let done = false;
-      const observer = new MutationObserver((mutations) => {
-        if (done) return;
-        const confirmBtn = findMatchInNewNodes(
-          mutations,
-          (t) => CONFIRM_TEXT.test(t) && !CANCEL_TEXT.test(t)
-        );
-        if (confirmBtn) {
-          done = true;
-          observer.disconnect();
-          confirmBtn.click();
-          resolve(true);
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => {
-        if (!done) {
-          done = true;
-          observer.disconnect();
-          resolve(false);
-        }
-      }, MODAL_WAIT_MS);
-    });
-  }
-
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
   }
@@ -116,13 +73,15 @@
     return null;
   }
 
+  // confirm-override.js가 MAIN world에서 window.confirm을 자동 확인으로 덮어써두므로
+  // 클릭하면 네이티브 확인창 없이 바로 연장 요청이 진행된다. 요청이 끝날 시간만 잠깐 준다.
   async function attemptExtend() {
     const btn = findExtendButton();
     if (!btn) return 'no_button';
     btn.scrollIntoView({ block: 'center' });
     btn.click();
-    const confirmed = await waitForConfirmClick();
-    return confirmed ? 'success' : 'clicked_no_modal';
+    await sleep(EXTEND_REQUEST_WAIT_MS);
+    return 'success';
   }
 
   function parseDaysRemaining(text) {

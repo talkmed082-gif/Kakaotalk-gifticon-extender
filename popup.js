@@ -3,7 +3,6 @@ const UPDATE_REMINDER_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STATUS_LABEL = {
   success: '연장 완료',
-  clicked_no_modal: '버튼 클릭됨(확인 필요)',
   no_button: '연장 버튼 없음',
 };
 
