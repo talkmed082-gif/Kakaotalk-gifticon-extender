@@ -126,37 +126,40 @@
     return m[1] === 'DAY' ? 0 : Number(m[1]);
   }
 
-  // D-N 배지가 <a> 태그 안이 아니라 카드 내 형제 요소에 있을 수 있어서,
-  // 링크 자신부터 시작해 몇 단계 위 조상까지 넓혀가며 D-N을 찾는다.
-  // 가장 먼저 D-N이 나오는 조상에서 멈추기 때문에 다른 카드 텍스트와 섞이지 않는다.
-  function findCardText(link) {
-    let node = link;
-    for (let i = 0; i < 6 && node; i++) {
-      if (/D-(\d+|DAY)\b/.test(node.textContent)) return node.textContent;
-      node = node.parentElement;
+  // 남은 일수는 <span class="badge_deadline">D-16</span> 배지에서 읽는다.
+  // 이 배지가 상세페이지 링크(<a href="/giftbox/inbox/detail/...">) 안에 있는지
+  // 형제로 밖에 있는지 알 수 없어서, 배지에서 조상으로 올라가며 그 조상 아래에서
+  // 링크를 찾는 방식으로 양쪽 경우를 다 커버한다.
+  function findDetailLinkNear(badge) {
+    let container = badge;
+    for (let i = 0; i < 6 && container; i++) {
+      const link = container.querySelector('a[href*="/giftbox/inbox/detail/"]');
+      if (link) return link;
+      container = container.parentElement;
     }
-    return link.textContent;
+    return null;
   }
 
   function collectListItems() {
-    const links = document.querySelectorAll('a[href*="/giftbox/inbox/detail/"]');
+    const badges = document.querySelectorAll('.badge_deadline');
     const items = [];
     const seen = new Set();
-    links.forEach((a) => {
-      const href = a.getAttribute('href');
+    badges.forEach((badge) => {
+      const remaining = parseDaysRemaining(badge.textContent);
+      if (remaining === null) return;
+      const link = findDetailLinkNear(badge);
+      if (!link) return;
+      const href = link.getAttribute('href');
       const m = href && href.match(/detail\/(\d+)/);
       if (!m) return;
       const id = m[1];
       if (seen.has(id)) return;
-      const cardText = findCardText(a);
-      const remaining = parseDaysRemaining(cardText);
-      if (remaining === null) return;
       seen.add(id);
       items.push({
         id,
         url: new URL(href, location.origin).href,
         remaining,
-        name: cardText.replace(/\s+/g, ' ').trim().slice(0, 40),
+        name: link.textContent.replace(/\s+/g, ' ').trim().slice(0, 40) || badge.parentElement.textContent.trim().slice(0, 40),
       });
     });
     return items;
