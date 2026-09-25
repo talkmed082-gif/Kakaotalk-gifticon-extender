@@ -72,29 +72,43 @@ document.getElementById('resetProcessed').addEventListener('click', () => {
   });
 });
 
+const GIFT_HOME_URL = 'https://gift.kakao.com/giftbox/inbox?couponStatus=OPEN';
+
+function runScanOnTab(tabId) {
+  chrome.tabs.sendMessage(tabId, { type: 'RUN_SCAN' }, (res) => {
+    if (chrome.runtime.lastError) {
+      document.getElementById('status').textContent = '오류: ' + chrome.runtime.lastError.message;
+      return;
+    }
+    const r = res && res.result;
+    if (r && typeof r.eligible === 'number') {
+      document.getElementById('status').textContent =
+        `검사 완료 — 카드 ${r.totalCards}개 중 대상 ${r.eligible}개` + (r.navigating ? ' (이동 중)' : '');
+    } else if (r && r.status) {
+      document.getElementById('status').textContent = '검사 완료 — ' + (STATUS_LABEL[r.status] || r.status);
+    } else {
+      document.getElementById('status').textContent = '검사 완료';
+    }
+    render();
+  });
+}
+
 document.getElementById('runNow').addEventListener('click', () => {
   document.getElementById('status').textContent = '검사 중...';
   chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-    if (!tab || !tab.url || !tab.url.includes('gift.kakao.com')) {
-      document.getElementById('status').textContent = 'gift.kakao.com 탭에서 실행하세요.';
+    if (!tab) return;
+    if (tab.url && tab.url.includes('gift.kakao.com')) {
+      runScanOnTab(tab.id);
       return;
     }
-    chrome.tabs.sendMessage(tab.id, { type: 'RUN_SCAN' }, (res) => {
-      if (chrome.runtime.lastError) {
-        document.getElementById('status').textContent = '오류: ' + chrome.runtime.lastError.message;
-        return;
-      }
-      const r = res && res.result;
-      if (r && typeof r.eligible === 'number') {
-        document.getElementById('status').textContent =
-          `검사 완료 — 카드 ${r.totalCards}개 중 대상 ${r.eligible}개` + (r.navigating ? ' (이동 중)' : '');
-      } else if (r && r.status) {
-        document.getElementById('status').textContent = '검사 완료 — ' + (STATUS_LABEL[r.status] || r.status);
-      } else {
-        document.getElementById('status').textContent = '검사 완료';
-      }
-      render();
-    });
+    document.getElementById('status').textContent = 'gift.kakao.com으로 이동 중...';
+    const onUpdated = (tabId, info) => {
+      if (tabId !== tab.id || info.status !== 'complete') return;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      runScanOnTab(tabId);
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.update(tab.id, { url: GIFT_HOME_URL });
   });
 });
 

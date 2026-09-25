@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "카카오 기프티콘 유효기간 자동 연장",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "gift.kakao.com에서 유효기간이 임박(기본 30일 이내)한 기프티콘의 '기간 연장'을 신청합니다. 로그인된 선물함 화면에서만, 자동 실행을 켠 경우에만 동작하며, 30일 이상 확인하지 않으면 알려줍니다.",
-  "permissions": ["storage", "alarms", "notifications"],
+  "permissions": ["storage", "alarms", "notifications", "tabs"],
   "host_permissions": ["https://gift.kakao.com/*"],
   "background": {
     "service_worker": "background.js"
