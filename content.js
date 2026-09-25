@@ -55,15 +55,20 @@
     return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
   }
 
+  // 카카오 화면은 <button>/<a>가 아니라 <div>로 만든 가짜 버튼도 많다.
+  // 태그 종류를 가리지 않고, 자식 요소가 없는(텍스트를 직접 담은) 최말단 요소만
+  // 대상으로 텍스트를 매칭한다 — 그래야 텍스트를 감싸는 큰 컨테이너를 잘못 클릭하지 않는다.
+  function isLeaf(el) {
+    return el.children.length === 0;
+  }
+
   function findMatchInNewNodes(mutationsList, matcher) {
     for (const mutation of mutationsList) {
       for (const node of mutation.addedNodes) {
         if (node.nodeType !== 1) continue;
-        const candidates = node.matches && node.matches('button, a, [role="button"]')
-          ? [node, ...node.querySelectorAll('button, a, [role="button"]')]
-          : [...node.querySelectorAll('button, a, [role="button"]')];
+        const candidates = isLeaf(node) ? [node] : [...node.querySelectorAll('*')].filter(isLeaf);
         for (const el of candidates) {
-          const text = el.textContent.trim();
+          const text = el.textContent.trim().replace(/\s+/g, ' ');
           if (matcher(text) && isVisible(el)) return el;
         }
       }
@@ -103,7 +108,7 @@
   }
 
   function findExtendButton() {
-    const all = document.querySelectorAll('button, a, [role="button"]');
+    const all = [...document.querySelectorAll('*')].filter(isLeaf);
     for (const el of all) {
       const text = el.textContent.trim().replace(/\s+/g, ' ');
       if (EXTEND_BUTTON_TEXT.test(text) && text.length < 20 && isVisible(el)) return el;
