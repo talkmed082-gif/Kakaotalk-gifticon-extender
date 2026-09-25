@@ -126,20 +126,9 @@
     return m[1] === 'DAY' ? 0 : Number(m[1]);
   }
 
-  // 남은 일수는 <span class="badge_deadline">D-16</span> 배지에서 읽는다.
-  // 이 배지가 상세페이지 링크(<a href="/giftbox/inbox/detail/...">) 안에 있는지
-  // 형제로 밖에 있는지 알 수 없어서, 배지에서 조상으로 올라가며 그 조상 아래에서
-  // 링크를 찾는 방식으로 양쪽 경우를 다 커버한다.
-  function findDetailLinkNear(badge) {
-    let container = badge;
-    for (let i = 0; i < 6 && container; i++) {
-      const link = container.querySelector('a[href*="/giftbox/inbox/detail/"]');
-      if (link) return link;
-      container = container.parentElement;
-    }
-    return null;
-  }
-
+  // 실제 구조 확인 결과 <span class="badge_deadline">D-16</span>은
+  // <a class="link_receive" href="/giftbox/inbox/detail/...">의 자손이다.
+  // closest()로 그 조상 링크를 바로 찾는다.
   function collectListItems() {
     const badges = document.querySelectorAll('.badge_deadline');
     const items = [];
@@ -147,7 +136,7 @@
     badges.forEach((badge) => {
       const remaining = parseDaysRemaining(badge.textContent);
       if (remaining === null) return;
-      const link = findDetailLinkNear(badge);
+      const link = badge.closest('a[href*="/giftbox/inbox/detail/"]');
       if (!link) return;
       const href = link.getAttribute('href');
       const m = href && href.match(/detail\/(\d+)/);
