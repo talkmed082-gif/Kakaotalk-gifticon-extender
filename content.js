@@ -3,6 +3,9 @@
 // 화면에 보이는 텍스트를 기준으로 동작한다. 문구가 다르면 아래 정규식을 수정해야 한다.
 (function () {
   const DEFAULT_SETTINGS = { autoRun: true, thresholdDays: 30 };
+  const INBOX_PATH = '/giftbox/inbox';
+  const INBOX_URL = 'https://gift.kakao.com/giftbox/inbox?couponStatus=OPEN';
+  const AUTO_REDIRECT_FROM_PATHS = ['/home', '/'];
   const EXTEND_BUTTON_TEXT = /유효기간\s*연장/;
   const CONFIRM_TEXT = /(연장하기|연장\s*신청|신청하기|확인)/;
   const CANCEL_TEXT = /(취소|닫기|아니요)/;
@@ -187,9 +190,28 @@
     scanTimer = setTimeout(() => scan(false), SCAN_DEBOUNCE_MS);
   }
 
-  const pageObserver = new MutationObserver(() => scheduleScan());
-  pageObserver.observe(document.body, { childList: true, subtree: true });
-  scheduleScan();
+  // 로그인 직후 떨어지는 /home 같은 화면에서는 실제 기프티콘 목록이 안 보이므로,
+  // 자동 실행이 켜져 있으면 유효기간이 보이는 목록 화면으로 바로 이동시킨다.
+  async function maybeRedirectToInbox() {
+    const settings = await getSettings();
+    if (!settings.autoRun) return false;
+    if (location.pathname === INBOX_PATH) return false;
+    if (AUTO_REDIRECT_FROM_PATHS.includes(location.pathname)) {
+      location.href = INBOX_URL;
+      return true;
+    }
+    return false;
+  }
+
+  async function init() {
+    const redirected = await maybeRedirectToInbox();
+    if (redirected) return;
+    const pageObserver = new MutationObserver(() => scheduleScan());
+    pageObserver.observe(document.body, { childList: true, subtree: true });
+    scheduleScan();
+  }
+
+  init();
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'RUN_SCAN') {
