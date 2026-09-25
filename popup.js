@@ -70,8 +70,20 @@ document.getElementById('runNow').addEventListener('click', () => {
       document.getElementById('status').textContent = 'gift.kakao.com 탭에서 실행하세요.';
       return;
     }
-    chrome.tabs.sendMessage(tab.id, { type: 'RUN_SCAN' }, () => {
-      document.getElementById('status').textContent = '검사 완료';
+    chrome.tabs.sendMessage(tab.id, { type: 'RUN_SCAN' }, (res) => {
+      if (chrome.runtime.lastError) {
+        document.getElementById('status').textContent = '오류: ' + chrome.runtime.lastError.message;
+        return;
+      }
+      const r = res && res.result;
+      if (r && typeof r.eligible === 'number') {
+        document.getElementById('status').textContent =
+          `검사 완료 — 카드 ${r.totalCards}개 중 대상 ${r.eligible}개` + (r.navigating ? ' (이동 중)' : '');
+      } else if (r && r.status) {
+        document.getElementById('status').textContent = '검사 완료 — ' + (STATUS_LABEL[r.status] || r.status);
+      } else {
+        document.getElementById('status').textContent = '검사 완료';
+      }
       render();
     });
   });

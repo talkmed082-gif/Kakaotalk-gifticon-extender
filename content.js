@@ -155,19 +155,23 @@
   }
 
   async function scanListPage(force) {
-    if (isProcessing) return;
+    if (isProcessing) return { skipped: true };
     isProcessing = true;
     try {
       const settings = await getSettings();
-      if (!settings.autoRun && !force) return;
+      if (!settings.autoRun && !force) return { skipped: true };
       chrome.storage.local.set({ lastRunAt: Date.now(), reminderNotifiedFor: null });
       const processed = await getProcessed();
-      const items = collectListItems().filter(
+      const all = collectListItems();
+      const items = all.filter(
         (i) => i.remaining >= 0 && i.remaining <= settings.thresholdDays && !processed[i.id]
       );
-      if (items.length === 0) return;
+      if (items.length === 0) {
+        return { totalCards: all.length, eligible: 0 };
+      }
       await setQueue(items);
       location.href = items[0].url;
+      return { totalCards: all.length, eligible: items.length, navigating: true };
     } finally {
       isProcessing = false;
     }
@@ -198,12 +202,13 @@
 
   // 팝업의 "지금 검사 및 연장" 수동 실행: 상세 화면이면 큐 여부와 무관하게 바로 시도한다.
   async function processDetailPageManual(id) {
-    if (isProcessing) return;
+    if (isProcessing) return { skipped: true };
     isProcessing = true;
     try {
       const status = await attemptExtend();
       markProcessed(id);
       log({ name: id, remaining: null, status });
+      return { status };
     } finally {
       isProcessing = false;
     }
@@ -251,7 +256,7 @@
     if (msg.type === 'RUN_SCAN') {
       const detailMatch = location.pathname.match(DETAIL_PATH_RE);
       const task = detailMatch ? () => processDetailPageManual(detailMatch[1]) : () => scanListPage(true);
-      task().then(() => sendResponse({ ok: true }));
+      task().then((result) => sendResponse({ ok: true, result }));
       return true;
     }
   });
