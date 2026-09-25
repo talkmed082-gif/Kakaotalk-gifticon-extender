@@ -1,16 +1,19 @@
-// gift.kakao.com 화면에서 "유효기간 연장" 버튼을 찾아 자동으로 클릭한다.
-// 카카오의 실제 클래스명은 알 수 없고(리액트 앱이라 빌드마다 해시가 바뀜) 바뀔 수도 있으므로,
-// 화면에 보이는 텍스트를 기준으로 동작한다. 문구가 다르면 아래 정규식을 수정해야 한다.
+// gift.kakao.com에서 유효기간 연장을 자동화한다.
+// 목록 화면(/giftbox/inbox)에는 "D-16" 같은 배지로 남은 일수만 보이고,
+// 실제 "기간 연장" 버튼은 각 기프티콘의 상세 화면(/giftbox/inbox/detail/<id>)에 있다.
+// 그래서 목록에서 대상(D-30 이내)을 골라 큐에 담아두고, 상세 화면으로 하나씩 이동하며 처리한다.
+// 카카오 화면은 리액트라 클래스명이 자주 바뀌므로, 클래스명이 아니라 화면에 보이는 텍스트를 기준으로 동작한다.
 (function () {
   const DEFAULT_SETTINGS = { autoRun: true, thresholdDays: 30 };
   const INBOX_PATH = '/giftbox/inbox';
   const INBOX_URL = 'https://gift.kakao.com/giftbox/inbox?couponStatus=OPEN';
   const AUTO_REDIRECT_FROM_PATHS = ['/home', '/'];
-  const EXTEND_BUTTON_TEXT = /유효기간\s*연장/;
+  const DETAIL_PATH_RE = /^\/giftbox\/inbox\/detail\/(\d+)/;
+  const EXTEND_BUTTON_TEXT = /(유효)?기간\s*연장/;
   const CONFIRM_TEXT = /(연장하기|연장\s*신청|신청하기|확인)/;
   const CANCEL_TEXT = /(취소|닫기|아니요)/;
   const SCAN_DEBOUNCE_MS = 1500;
-  const CLICK_DELAY_MS = 2000;
+  const NAV_DELAY_MS = 1200;
   const MODAL_WAIT_MS = 4000;
 
   let scanTimer = null;
@@ -24,77 +27,32 @@
   }
 
   function getSettings() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(DEFAULT_SETTINGS, resolve);
-    });
+    return new Promise((resolve) => chrome.storage.local.get(DEFAULT_SETTINGS, resolve));
   }
 
   function getProcessed() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get({ processed: {} }, ({ processed }) => resolve(processed));
-    });
+    return new Promise((resolve) => chrome.storage.local.get({ processed: {} }, ({ processed }) => resolve(processed)));
   }
 
-  function markProcessed(key) {
+  function markProcessed(id) {
     chrome.storage.local.get({ processed: {} }, ({ processed }) => {
-      processed[key] = Date.now();
+      processed[id] = Date.now();
       chrome.storage.local.set({ processed });
     });
   }
 
-  function hashKey(str) {
-    let h = 0;
-    for (let i = 0; i < str.length; i++) {
-      h = (h * 31 + str.charCodeAt(i)) | 0;
-    }
-    return String(h);
+  function getQueue() {
+    return new Promise((resolve) => chrome.storage.local.get({ queue: [] }, ({ queue }) => resolve(queue)));
   }
 
-  function parseExpiry(text) {
-    const withSuffix = text.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})\s*까지/);
-    const m = withSuffix || text.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
-    if (!m) return null;
-    const [, y, mo, d] = m;
-    const date = new Date(Number(y), Number(mo) - 1, Number(d));
-    if (Number.isNaN(date.getTime())) return null;
-    return date;
-  }
-
-  function daysUntil(date) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const target = new Date(date);
-    target.setHours(0, 0, 0, 0);
-    return Math.round((target - today) / 86400000);
+  function setQueue(queue) {
+    return new Promise((resolve) => chrome.storage.local.set({ queue }, resolve));
   }
 
   function isVisible(el) {
     const rect = el.getBoundingClientRect();
     const style = getComputedStyle(el);
     return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-  }
-
-  function collectExtendButtons() {
-    const all = document.querySelectorAll('button, a, [role="button"]');
-    const result = [];
-    all.forEach((el) => {
-      const text = el.textContent.trim().replace(/\s+/g, ' ');
-      if (EXTEND_BUTTON_TEXT.test(text) && text.length < 20 && isVisible(el)) {
-        result.push(el);
-      }
-    });
-    return result;
-  }
-
-  function findCardContext(button) {
-    let node = button;
-    for (let i = 0; i < 8 && node.parentElement; i++) {
-      node = node.parentElement;
-      if (/\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}/.test(node.textContent)) {
-        return node;
-      }
-    }
-    return button.parentElement || button;
   }
 
   function findMatchInNewNodes(mutationsList, matcher) {
@@ -144,7 +102,54 @@
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  async function scan(force) {
+  function findExtendButton() {
+    const all = document.querySelectorAll('button, a, [role="button"]');
+    for (const el of all) {
+      const text = el.textContent.trim().replace(/\s+/g, ' ');
+      if (EXTEND_BUTTON_TEXT.test(text) && text.length < 20 && isVisible(el)) return el;
+    }
+    return null;
+  }
+
+  async function attemptExtend() {
+    const btn = findExtendButton();
+    if (!btn) return 'no_button';
+    btn.scrollIntoView({ block: 'center' });
+    btn.click();
+    const confirmed = await waitForConfirmClick();
+    return confirmed ? 'success' : 'clicked_no_modal';
+  }
+
+  function parseDaysRemaining(text) {
+    const m = text.match(/D-(\d+|DAY)\b/);
+    if (!m) return null;
+    return m[1] === 'DAY' ? 0 : Number(m[1]);
+  }
+
+  function collectListItems() {
+    const links = document.querySelectorAll('a[href*="/giftbox/inbox/detail/"]');
+    const items = [];
+    const seen = new Set();
+    links.forEach((a) => {
+      const href = a.getAttribute('href');
+      const m = href && href.match(/detail\/(\d+)/);
+      if (!m) return;
+      const id = m[1];
+      if (seen.has(id)) return;
+      const remaining = parseDaysRemaining(a.textContent);
+      if (remaining === null) return;
+      seen.add(id);
+      items.push({
+        id,
+        url: new URL(href, location.origin).href,
+        remaining,
+        name: a.textContent.replace(/\s+/g, ' ').trim().slice(0, 40),
+      });
+    });
+    return items;
+  }
+
+  async function scanListPage(force) {
     if (isProcessing) return;
     isProcessing = true;
     try {
@@ -152,46 +157,53 @@
       if (!settings.autoRun && !force) return;
       chrome.storage.local.set({ lastRunAt: Date.now(), reminderNotifiedFor: null });
       const processed = await getProcessed();
-      const buttons = collectExtendButtons();
-
-      for (const btn of buttons) {
-        const card = findCardContext(btn);
-        const cardText = card.textContent.replace(/\s+/g, ' ').trim();
-        const key = hashKey(cardText.slice(0, 200));
-        if (processed[key]) continue;
-
-        const expiry = parseExpiry(cardText);
-        if (!expiry) continue;
-        const remaining = daysUntil(expiry);
-        if (remaining < 0 || remaining > settings.thresholdDays) continue;
-
-        const nameGuess = cardText.slice(0, 40);
-        btn.scrollIntoView({ block: 'center' });
-        btn.click();
-
-        const confirmed = await waitForConfirmClick();
-        markProcessed(key);
-        log({
-          name: nameGuess,
-          expiry: expiry.toISOString().slice(0, 10),
-          remaining,
-          status: confirmed ? 'success' : 'clicked_no_modal',
-        });
-
-        await sleep(CLICK_DELAY_MS);
-      }
+      const items = collectListItems().filter(
+        (i) => i.remaining >= 0 && i.remaining <= settings.thresholdDays && !processed[i.id]
+      );
+      if (items.length === 0) return;
+      await setQueue(items);
+      location.href = items[0].url;
     } finally {
       isProcessing = false;
     }
   }
 
-  function scheduleScan() {
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(() => scan(false), SCAN_DEBOUNCE_MS);
+  // 목록에서 큐에 담아 보낸 상세 화면에서만 자동으로 동작한다.
+  // 사용자가 직접 다른 기프티콘 상세 화면을 열었을 때는 아무것도 하지 않는다.
+  async function processDetailPage(id) {
+    if (isProcessing) return;
+    isProcessing = true;
+    try {
+      const queue = await getQueue();
+      const current = queue.find((i) => i.id === id);
+      if (!current) return;
+
+      const status = await attemptExtend();
+      markProcessed(id);
+      log({ name: current.name, remaining: current.remaining, status });
+
+      const rest = queue.filter((i) => i.id !== id);
+      await setQueue(rest);
+      await sleep(NAV_DELAY_MS);
+      location.href = rest.length > 0 ? rest[0].url : INBOX_URL;
+    } finally {
+      isProcessing = false;
+    }
   }
 
-  // 로그인 직후 떨어지는 /home 같은 화면에서는 실제 기프티콘 목록이 안 보이므로,
-  // 자동 실행이 켜져 있으면 유효기간이 보이는 목록 화면으로 바로 이동시킨다.
+  // 팝업의 "지금 검사 및 연장" 수동 실행: 상세 화면이면 큐 여부와 무관하게 바로 시도한다.
+  async function processDetailPageManual(id) {
+    if (isProcessing) return;
+    isProcessing = true;
+    try {
+      const status = await attemptExtend();
+      markProcessed(id);
+      log({ name: id, remaining: null, status });
+    } finally {
+      isProcessing = false;
+    }
+  }
+
   async function maybeRedirectToInbox() {
     const settings = await getSettings();
     if (!settings.autoRun) return false;
@@ -203,19 +215,38 @@
     return false;
   }
 
+  function scheduleScan(fn) {
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(fn, SCAN_DEBOUNCE_MS);
+  }
+
   async function init() {
-    const redirected = await maybeRedirectToInbox();
-    if (redirected) return;
-    const pageObserver = new MutationObserver(() => scheduleScan());
-    pageObserver.observe(document.body, { childList: true, subtree: true });
-    scheduleScan();
+    const detailMatch = location.pathname.match(DETAIL_PATH_RE);
+    if (detailMatch) {
+      const id = detailMatch[1];
+      const trigger = () => processDetailPage(id);
+      const observer = new MutationObserver(() => scheduleScan(trigger));
+      observer.observe(document.body, { childList: true, subtree: true });
+      scheduleScan(trigger);
+      return;
+    }
+    if (location.pathname === INBOX_PATH) {
+      const trigger = () => scanListPage(false);
+      const observer = new MutationObserver(() => scheduleScan(trigger));
+      observer.observe(document.body, { childList: true, subtree: true });
+      scheduleScan(trigger);
+      return;
+    }
+    await maybeRedirectToInbox();
   }
 
   init();
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'RUN_SCAN') {
-      scan(true).then(() => sendResponse({ ok: true }));
+      const detailMatch = location.pathname.match(DETAIL_PATH_RE);
+      const task = detailMatch ? () => processDetailPageManual(detailMatch[1]) : () => scanListPage(true);
+      task().then(() => sendResponse({ ok: true }));
       return true;
     }
   });

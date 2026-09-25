@@ -1,6 +1,11 @@
 const DEFAULT_SETTINGS = { autoRun: true, thresholdDays: 30 };
 const UPDATE_REMINDER_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const STATUS_LABEL = {
+  success: '연장 완료',
+  clicked_no_modal: '버튼 클릭됨(확인 필요)',
+  no_button: '연장 버튼 없음',
+};
 
 function renderLastRun(lastRunAt) {
   const el = document.getElementById('lastRun');
@@ -33,9 +38,9 @@ function render() {
       ? log
           .map(
             (e) =>
-              `<div class="entry ${e.status}">${new Date(e.time).toLocaleString('ko-KR')} · ${
-                e.name
-              } (D-${e.remaining}) · ${e.status === 'success' ? '연장 완료' : '버튼 클릭됨(확인 필요)'}</div>`
+              `<div class="entry ${e.status}">${new Date(e.time).toLocaleString('ko-KR')} · ${e.name}${
+                e.remaining != null ? ` (D-${e.remaining})` : ''
+              } · ${STATUS_LABEL[e.status] || e.status}</div>`
           )
           .join('')
       : '<div>기록 없음</div>';
