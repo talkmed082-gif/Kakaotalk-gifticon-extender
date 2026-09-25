@@ -1,10 +1,33 @@
 const DEFAULT_SETTINGS = { autoRun: true, thresholdDays: 30 };
+const UPDATE_REMINDER_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function renderLastRun(lastRunAt) {
+  const el = document.getElementById('lastRun');
+  if (!lastRunAt) {
+    el.textContent = '아직 실행 기록이 없습니다.';
+    el.classList.remove('overdue');
+    return;
+  }
+  const daysSince = Math.floor((Date.now() - lastRunAt) / DAY_MS);
+  const dateLabel = new Date(lastRunAt).toLocaleDateString('ko-KR');
+  if (daysSince <= 0) {
+    el.textContent = `마지막 검사: 오늘 (${dateLabel})`;
+  } else {
+    el.textContent = `마지막 검사: ${daysSince}일 전 (${dateLabel})`;
+  }
+  el.classList.toggle('overdue', daysSince >= UPDATE_REMINDER_DAYS);
+  if (daysSince >= UPDATE_REMINDER_DAYS) {
+    el.textContent += ` — ${UPDATE_REMINDER_DAYS}일 이상 지났어요, 한 번 확인해보세요.`;
+  }
+}
 
 function render() {
-  chrome.storage.local.get({ ...DEFAULT_SETTINGS, log: [] }, ({ autoRun, thresholdDays, log }) => {
+  chrome.storage.local.get({ ...DEFAULT_SETTINGS, log: [], lastRunAt: null }, ({ autoRun, thresholdDays, log, lastRunAt }) => {
     document.getElementById('autoRun').checked = autoRun;
     document.getElementById('threshold').value = thresholdDays;
     document.getElementById('thresholdLabel').textContent = thresholdDays;
+    renderLastRun(lastRunAt);
     const logEl = document.getElementById('log');
     logEl.innerHTML = log.length
       ? log

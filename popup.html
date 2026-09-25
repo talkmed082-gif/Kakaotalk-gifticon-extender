@@ -34,6 +34,17 @@
         margin-top: 6px;
         min-height: 16px;
       }
+      #lastRun {
+        font-size: 12px;
+        margin-bottom: 8px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        background: #f2f2f2;
+      }
+      #lastRun.overdue {
+        background: #fff3cd;
+        color: #8a6100;
+      }
       #log {
         max-height: 200px;
         overflow-y: auto;
@@ -55,6 +66,7 @@
   </head>
   <body>
     <h1>카카오 기프티콘 유효기간 연장</h1>
+    <div id="lastRun"></div>
     <label>자동 실행 <input type="checkbox" id="autoRun" /></label>
     <label
       >연장 대상 (D-<span id="thresholdLabel">30</span> 이내)

@@ -147,6 +147,7 @@
     try {
       const settings = await getSettings();
       if (!settings.autoRun && !force) return;
+      chrome.storage.local.set({ lastRunAt: Date.now(), reminderNotifiedFor: null });
       const processed = await getProcessed();
       const buttons = collectExtendButtons();
 
