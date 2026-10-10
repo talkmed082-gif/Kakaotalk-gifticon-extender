@@ -4,7 +4,20 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const STATUS_LABEL = {
   success: '연장 완료',
   no_button: '연장 버튼 없음',
+  unconfirmed: '확인 안 됨 — 선물함에서 직접 확인 필요',
 };
+
+// 기프티콘 이름은 카카오 화면에서 읽은 텍스트라 innerHTML로 넣지 않는다.
+function entry(className, text) {
+  const div = document.createElement('div');
+  div.className = 'entry ' + className;
+  div.textContent = text;
+  return div;
+}
+
+function fillList(el, entries, emptyText) {
+  el.replaceChildren(...(entries.length ? entries : [entry('', emptyText)]));
+}
 
 function renderLastRun(lastRunAt) {
   const el = document.getElementById('lastRun');
@@ -28,30 +41,30 @@ function renderLastRun(lastRunAt) {
 
 function render() {
   chrome.storage.local.get(
-    { ...DEFAULT_SETTINGS, log: [], lastRunAt: null, unextendable: [] },
-    ({ autoRun, thresholdDays, log, lastRunAt, unextendable }) => {
+    { ...DEFAULT_SETTINGS, log: [], lastRunAt: null, unextendable: [], structureWarning: null },
+    ({ autoRun, thresholdDays, log, lastRunAt, unextendable, structureWarning }) => {
       document.getElementById('autoRun').checked = autoRun;
       document.getElementById('threshold').value = thresholdDays;
       document.getElementById('thresholdLabel').textContent = thresholdDays;
       renderLastRun(lastRunAt);
-      const logEl = document.getElementById('log');
-      logEl.innerHTML = log.length
-        ? log
-            .map(
-              (e) =>
-                `<div class="entry ${e.status}">${new Date(e.time).toLocaleString('ko-KR')} · ${e.name}${
-                  e.remaining != null ? ` (D-${e.remaining})` : ''
-                } · ${STATUS_LABEL[e.status] || e.status}</div>`
-            )
-            .join('')
-        : '<div>기록 없음</div>';
-
-      const unextendableEl = document.getElementById('unextendableList');
-      unextendableEl.innerHTML = unextendable.length
-        ? unextendable
-            .map((u) => `<div class="entry no_button">${u.name}</div>`)
-            .join('')
-        : '<div>없음</div>';
+      document.getElementById('structureWarning').hidden = !structureWarning;
+      fillList(
+        document.getElementById('log'),
+        log.map((e) =>
+          entry(
+            e.status,
+            `${new Date(e.time).toLocaleString('ko-KR')} · ${e.name}${e.remaining != null ? ` (D-${e.remaining})` : ''} · ${
+              STATUS_LABEL[e.status] || e.status
+            }`
+          )
+        ),
+        '기록 없음'
+      );
+      fillList(
+        document.getElementById('unextendableList'),
+        unextendable.map((u) => entry('no_button', u.name)),
+        '없음'
+      );
     }
   );
 }
@@ -83,7 +96,9 @@ function runScanOnTab(tabId) {
     const r = res && res.result;
     if (r && typeof r.eligible === 'number') {
       document.getElementById('status').textContent =
-        `검사 완료 — 카드 ${r.totalCards}개 중 대상 ${r.eligible}개` + (r.navigating ? ' (이동 중)' : '');
+        `검사 완료 — 카드 ${r.totalCards}개 중 대상 ${r.eligible}개` +
+        (r.navigating ? ' (이동 중)' : '') +
+        (r.structureBroken ? ' · 남은 일수를 읽지 못함(화면 변경 의심)' : '');
     } else if (r && r.status) {
       document.getElementById('status').textContent = '검사 완료 — ' + (STATUS_LABEL[r.status] || r.status);
     } else {

@@ -12,7 +12,11 @@
   const EXTEND_BUTTON_TEXT = /(유효)?기간\s*연장/;
   const SCAN_DEBOUNCE_MS = 1500;
   const NAV_DELAY_MS = 1200;
-  const EXTEND_REQUEST_WAIT_MS = 1500;
+  const EXTEND_RESULT_TIMEOUT_MS = 5000;
+  const EXTEND_RESULT_POLL_MS = 250;
+  const EXTEND_SUCCESS_TEXT = /유효기간이[^\n]*연장되었/;
+  const DEADLINE_TEXT = /^D-(\d+|DAY)\b/;
+  const ARMED_ATTR = 'data-gx-armed';
 
   let scanTimer = null;
   let isProcessing = false;
@@ -83,49 +87,74 @@
     return null;
   }
 
-  // confirm-override.js가 MAIN world에서 window.confirm을 자동 확인으로 덮어써두므로
-  // 클릭하면 네이티브 확인창 없이 바로 연장 요청이 진행된다. 요청이 끝날 시간만 잠깐 준다.
+  // 클릭 직전에 표시(data-gx-armed)를 켜면 confirm-override.js가 그 확인창만 자동 확인한다.
+  // 클릭 후 카카오가 띄우는 "유효기간이 …연장되었어요" 문구를 직접 확인해야 성공으로 친다.
   async function attemptExtend() {
     const btn = findExtendButton();
     if (!btn) return 'no_button';
+    const root = document.documentElement;
     btn.scrollIntoView({ block: 'center' });
-    btn.click();
-    await sleep(EXTEND_REQUEST_WAIT_MS);
-    return 'success';
+    root.setAttribute(ARMED_ATTR, String(Date.now()));
+    try {
+      btn.click();
+      const deadline = Date.now() + EXTEND_RESULT_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (EXTEND_SUCCESS_TEXT.test(document.body.innerText)) return 'success';
+        await sleep(EXTEND_RESULT_POLL_MS);
+      }
+      return 'unconfirmed';
+    } finally {
+      root.removeAttribute(ARMED_ATTR);
+    }
   }
 
-  function parseDaysRemaining(text) {
-    const m = text.match(/D-(\d+|DAY)\b/);
-    if (!m) return null;
-    return m[1] === 'DAY' ? 0 : Number(m[1]);
+  // 남은 일수 배지("D-16")는 기프티콘 상세로 가는 <a> 안에 있다. 클래스명은 빌드마다 바뀌므로
+  // 링크 안의 최말단 요소 중 "D-숫자"로 시작하는 짧은 텍스트를 찾는다.
+  function readDaysRemaining(link) {
+    for (const el of link.querySelectorAll('*')) {
+      if (!isLeaf(el)) continue;
+      const text = el.textContent.trim();
+      if (text.length > 12) continue;
+      const m = text.match(DEADLINE_TEXT);
+      if (m) return m[1] === 'DAY' ? 0 : Number(m[1]);
+    }
+    return null;
   }
 
-  // 실제 구조 확인 결과 <span class="badge_deadline">D-16</span>은
-  // <a class="link_receive" href="/giftbox/inbox/detail/...">의 자손이다.
-  // closest()로 그 조상 링크를 바로 찾는다.
+  // links: 화면의 기프티콘 링크 수, items: 그중 남은 일수를 읽어낸 항목.
+  // 링크는 있는데 남은 일수를 하나도 못 읽으면 카카오 화면 구조가 바뀐 것으로 본다.
   function collectListItems() {
-    const badges = document.querySelectorAll('.badge_deadline');
+    const links = document.querySelectorAll('a[href*="/giftbox/inbox/detail/"]');
     const items = [];
     const seen = new Set();
-    badges.forEach((badge) => {
-      const remaining = parseDaysRemaining(badge.textContent);
-      if (remaining === null) return;
-      const link = badge.closest('a[href*="/giftbox/inbox/detail/"]');
-      if (!link) return;
+    links.forEach((link) => {
       const href = link.getAttribute('href');
       const m = href && href.match(/detail\/(\d+)/);
-      if (!m) return;
-      const id = m[1];
-      if (seen.has(id)) return;
-      seen.add(id);
+      if (!m || seen.has(m[1])) return;
+      seen.add(m[1]);
+      const remaining = readDaysRemaining(link);
+      if (remaining === null) return;
       items.push({
-        id,
+        id: m[1],
         url: new URL(href, location.origin).href,
         remaining,
-        name: link.textContent.replace(/\s+/g, ' ').trim().slice(0, 40) || badge.parentElement.textContent.trim().slice(0, 40),
+        name: link.textContent.replace(/\s+/g, ' ').trim().slice(0, 40),
       });
     });
-    return items;
+    return { linkCount: seen.size, items };
+  }
+
+  function reportStructure(linkCount, readCount) {
+    const broken = linkCount > 0 && readCount === 0;
+    chrome.storage.local.get({ structureWarning: null }, ({ structureWarning }) => {
+      if (broken && !structureWarning) {
+        chrome.storage.local.set({ structureWarning: { time: Date.now(), linkCount } });
+        chrome.runtime.sendMessage({ type: 'NOTIFY_STRUCTURE_CHANGED' });
+      } else if (!broken && structureWarning) {
+        chrome.storage.local.set({ structureWarning: null });
+      }
+    });
+    return broken;
   }
 
   async function scanListPage(force) {
@@ -136,17 +165,18 @@
       if (!settings.autoRun && !force) return { skipped: true };
       chrome.storage.local.set({ lastRunAt: Date.now(), reminderNotifiedFor: null });
       const processed = await getProcessed();
-      const all = collectListItems();
+      const { linkCount, items: all } = collectListItems();
+      const structureBroken = reportStructure(linkCount, all.length);
       const items = all.filter(
         (i) => i.remaining >= 0 && i.remaining <= settings.thresholdDays && !processed[i.id]
       );
       if (items.length === 0) {
-        return { totalCards: all.length, eligible: 0 };
+        return { totalCards: linkCount, eligible: 0, structureBroken };
       }
       await setQueue(items);
       chrome.storage.local.set({ runNoButtonIds: [] });
       location.href = items[0].url;
-      return { totalCards: all.length, eligible: items.length, navigating: true };
+      return { totalCards: linkCount, eligible: items.length, navigating: true };
     } finally {
       isProcessing = false;
     }

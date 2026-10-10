@@ -68,11 +68,25 @@
       .no_button {
         color: #888;
       }
+      .unconfirmed {
+        color: #b35c00;
+      }
+      #structureWarning {
+        font-size: 12px;
+        margin-bottom: 8px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        background: #fde2e1;
+        color: #9b1c1c;
+      }
     </style>
   </head>
   <body>
     <h1>카카오 기프티콘 유효기간 연장</h1>
     <div id="lastRun"></div>
+    <div id="structureWarning" hidden>
+      선물함에 기프티콘은 보이는데 남은 일수(D-day)를 읽지 못했어요. 카카오 화면이 바뀌었을 수 있어, 지금은 자동 연장이 동작하지 않습니다.
+    </div>
     <label>자동 실행 <input type="checkbox" id="autoRun" /></label>
     <label
       >연장 대상 (D-<span id="thresholdLabel">30</span> 이내)
