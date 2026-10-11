@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>상세</title></head>
+<body>
+<!-- 모드: ok(연장 성공 문구 표시) / silent(문구 없음) / none(연장 버튼 없음) -->
+<div id="mode" data-mode="__MODE__"></div>
+<div id="extend" role="button">기간 연장</div>
+<div id="refund" role="button">선물 환불</div>
+<div id="result"></div>
+<script>
+  const mode = document.getElementById('mode').dataset.mode;
+  if (mode === 'none') document.getElementById('extend').remove();
+  document.getElementById('extend')?.addEventListener('click', () => {
+    if (!confirm('유효기간을 연장하시겠어요?')) return;
+    if (mode === 'ok') {
+      setTimeout(() => {
+        const m = document.createElement('div');
+        m.textContent = '유효기간이 2027.01.10까지 연장되었어요!';
+        document.body.appendChild(m);
+      }, 400);
+    }
+  });
+  document.getElementById('refund').addEventListener('click', () => {
+    document.getElementById('result').textContent = confirm('환불하시겠어요?') ? 'refunded' : 'kept';
+  });
+</script>
+</body></html>

@@ -33,6 +33,15 @@ chrome.runtime.onMessage.addListener((msg) => {
       priority: 1,
     });
   }
+  if (msg.type === 'NOTIFY_STRUCTURE_CHANGED') {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icon128.png',
+      title: '선물함 화면이 바뀐 것 같아요',
+      message: '기프티콘은 보이는데 남은 일수(D-day)를 읽지 못했습니다. 카카오 화면이 바뀌어 확장이 동작하지 않을 수 있어요.',
+      priority: 2,
+    });
+  }
 });
 
 function checkAndNotify() {
